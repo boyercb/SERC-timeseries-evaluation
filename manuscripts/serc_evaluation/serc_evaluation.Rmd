@@ -1,0 +1,273 @@
+---
+title:
+  # Title must be 150 characters or less
+  "Improving access to emergency obstetric care through better referral systems in rural northern Ghana"
+author:
+  - name: Sneha Patel
+    affiliation: '1'
+    # If corresponding author (only one corresponding author per manuscript)
+    email: sp2827@cumc.columbia.edu
+  - name: Christopher B. Boyer
+    affiliation: '1'
+  - name: J. Koku Awoonor-Williams
+    affiliation: '2'
+  - name: Rofina Asuru
+    affiliation: '2'
+  - name: James F. Phillips
+    affiliation: '1'
+affiliation:
+  - id: '1'
+    department: Heilbrunn Department of Population and Family Health
+    institution: Columbia University
+    city: New York
+    state: NY
+    country: USA
+  - id: '2' 
+    department: Regional Health Administration
+    institution: Ghana Health Service
+    city: Bolgatanga
+    state: Upper East
+    country: Ghana
+abstract: 
+ Test
+output: rticles::plos_article
+csl: plos.csl
+bibliography: library.bib
+---
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# additional R packages
+library(dplyr)
+library(tidyr)
+library(magrittr)
+library(ggplot2)
+library(splines)
+
+# set working directory
+setwd("~/Dropbox/ARCHeS/CU Practicum Ghana/2014/Christopher Boyer/SERC Evaluation/")
+
+# load data set
+load(file = "./DHIMS.rda")
+```
+
+> **Problem:** Transport and referral system delays block access to essential emergency obstetric interventions among pregnant  women in rural Ghana. \newline{}
+> **Approach:** The Sustainable Emergency Referral Care (SERC) project aims to develop lasting improvements to emergency transport equipment, communication systems, patient triage protocols, and financing and supervision of the referral system to improve access and save lives. \newline{}
+> **Local Setting:** The Upper East Region is the epicenter of community-based primary health care innovation in Ghana and has dramatically improved child survival despite high rates of poverty. However, geographically-dispersed populations and a lack of transportation infrastructure are a barrier to continued improvements in maternal and neonatal health.\newline{}
+> **Relevant Changes:** SERC piloted several vehicles
+Lessons Learnt: 
+
+
+# Introduction {-}
+Cite fancy references [@Garnier2007].
+
+# Methods {-}
+Data for the present study were derived from Ghana's District Health Information Management System (DHIMS) which records vital health statistics from all public health facilities in Ghana on a monthly basis. We consider only tallies of relevant indicators over the period 2009 to 2014, a period that includes a year and a half of data from fully operational SERC districts. The period prior to 2009 included only 
+
+We aim to estimate the impact of SERC services using piecewise spline regression to model change in mean facility reports of births, maternal deaths, and cesarian sections in the period before and after the implementation of SERC. The experience of SERC facilities is compared to that of a control group comprised of facilities in neighboring districts in the Upper East and Upper West Regions of Ghana. Controls were selected with careful consideration 
+
+# Results {-}
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mean_births <- DHIMS %>% group_by(SERC, date) %>%
+  filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+  summarise(total_births = sum(births, na.rm = T)) %>% group_by(SERC) %>% 
+  summarise(mean_births = mean(total_births, na.rm = T))
+
+p <- DHIMS %>% group_by(SERC, date) %>%
+          filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+          summarise(births = sum(births, na.rm = T)) %>% 
+          left_join(., mean_births) %>%
+          mutate(births2 = (births - mean_births)/mean_births)
+png(filename = "./serc_sitevisit_impact_births-2015-06-22.png", width = 4000, height = 2500, res = 300)
+          ggplot(p, aes(x = date, y = births2, colour = SERC, fill = SERC)) + 
+          geom_point() + geom_vline(aes(xintercept = as.numeric(date[date == as.Date("2013-08-01")])), linetype = 2) +
+          stat_smooth(method = "lm", formula = y ~ bs(x, degree = 1, knots = as.Date("2013-08-01"))) + 
+          theme_bw(base_size = 14, base_family = "Helvetica") +
+          labs(x = "Date", y = "Total number of facility deliveries (unit scaled)") +
+          scale_color_discrete(name = "Group") + scale_fill_discrete(name = "Group") +
+          annotate("text", x = as.Date("2014-05-01"), y = -0.35, label = "intervention period") 
+dev.off()
+
+DHIMS %>% filter(level == "District Hospital" & date >= as.Date("2009-01-01")) %>%
+          mutate(quarter = quarter(date, with_year = T),
+                 year = year(date)) %>% 
+          group_by(SERC, quarter) %>%
+          summarise(death_rate = sum(deaths, na.rm = T)/sum(births, na.rm = T)*100000) %>%
+          ggplot(., aes(x = quarter, y = death_rate, colour = SERC)) + 
+          geom_point() + stat_smooth(method = "lm", formula = y ~ bs(x, degree = 1, knots = as.Date("2013-08-01"))) + 
+          facet_wrap(~level)
+
+
+map <- readOGR(dsn = ".", layer = "UE-dist")
+df <- fortify(map, region = "DISTRICT")
+departures <- referrals %>% group_by(Station, DepartureLatitude, DepartureLongitude) %>% 
+                            summarise(count = n()) %>% filter(DepartureLatitude != "")
+
+departures <- data.frame(departures)
+coordinates(departures) <- ~DepartureLongitude+DepartureLatitude
+proj4string(departures) <- CRS("+proj=longlat +datum=WGS84")
+departures <- spTransform(departures, CRS(proj4string(map)))
+departures <- data.frame(departures)
+
+arrivals <- referrals %>% group_by(ReceivingFacility, ArrivalLatitude, ArrivalLongitude) %>% 
+                            summarise(count = n()) %>% filter(ArrivalLatitude != "")
+
+arrivals <- data.frame(arrivals)
+coordinates(arrivals) <- ~ArrivalLongitude+ArrivalLatitude
+proj4string(arrivals) <- CRS("+proj=longlat +datum=WGS84")
+arrivals <- spTransform(arrivals, CRS(proj4string(map)))
+arrivals <- data.frame(arrivals)
+totals <- bind_rows(departures, arrivals) %>% 
+          mutate(Station = as.character(Station), ReceivingFacility = as.character(ReceivingFacility)) %>%
+          mutate(Station = ifelse(is.na(Station), ReceivingFacility, Station),
+                 DepartureLongitude = ifelse(is.na(DepartureLongitude), ArrivalLongitude, DepartureLongitude),
+                 DepartureLatitude = ifelse(is.na(DepartureLatitude), ArrivalLatitude, DepartureLatitude)) %>%
+          group_by(Station, DepartureLongitude, DepartureLatitude) %>% summarise(count = sum(count))
+
+bad <- referrals %>% filter(ReferralDistance > mean(ReferralDistance, na.rm =T) + 4*sqrt(var(ReferralDistance, na.rm =T)) & ReferralDistance > 0) %>% select(GlobalRecordId)
+
+ref <- referrals %>% filter(!GlobalRecordId%in%bad$GlobalRecordId) %>% select(DepartureLongitude, DepartureLatitude, ArrivalLongitude, ArrivalLatitude) %>% na.omit()
+# ref <- data.frame(ref)
+# coordinates(ref) <- ~DepartureLongitude+DepartureLatitude
+# proj4string(ref) <- CRS("+proj=longlat +datum=WGS84")
+# ref <- spTransform(ref, CRS(proj4string(map)))
+# ref <- data.frame(ref)
+# coordinates(ref) <- ~ArrivalLongitude+ArrivalLatitude
+# proj4string(ref) <- CRS("+proj=longlat +datum=WGS84")
+# ref <- spTransform(ref, CRS(proj4string(map)))
+# ref <- data.frame(ref)
+path <- NULL
+for(i in 1:nrow(ref)){
+pathl <- gcIntermediate(p1 = cbind(ref$DepartureLongitude[i], ref$DepartureLatitude[i]), 
+                        p2 = cbind(ref$ArrivalLongitude[i], ref$ArrivalLatitude[i]))
+cl <- class(pathl)
+path_tmp <- matrix(unlist(pathl, use.names = T ), ncol = 2)
+path_tmp <- data.frame(path_tmp)
+path_tmp$person <- i
+# ifelse(cl == "matrix", path_tmp$person <- i , no = path_tmp$person <- paste(i, c(rep(1, nrow(pathl[[1]])), rep(2, nrow(pathl[[2]]))), sep = "."))
+path <- rbind(path, path_tmp)
+}
+totals$isStation <- ifelse(totals$Station %in% c("Apuwongo CHPS", "Daliga/Kuyeligu CHPS", "Lungu CHPS", 
+                                                 "Tarongo CHPS", "Kanga Health Centre", "Gowrie Nayire CHPS",
+                                                 "Adaboya CHPS", "Bolgatanga Regional Hospital", "Bongo District Hospital",
+                                                 "Builsa North District Hospital", "Fumbisi Health Centre", "Nayorigo CHPS",
+                                                 "War Memorial Hospital", "Wiaga Health Centre", "Yipaala CHPS" ), 
+                           "Other health facility", "SERC station")
+coordinates(path) <- ~X1+X2
+proj4string(path) <- CRS("+proj=longlat +datum=WGS84")
+path <- spTransform(path, CRS(proj4string(map)))
+path <- data.frame(path)
+theme_opts <- list(theme(panel.grid.minor = element_blank(),
+                        panel.grid.major = element_blank(),
+                        panel.background = element_blank(),
+                        plot.background = element_rect(fill="#e6e8ed"),
+                        panel.border = element_blank(),
+                        axis.line = element_blank(),
+                        axis.text.x = element_blank(),
+                        axis.text.y = element_blank(),
+                        axis.ticks = element_blank(),
+                        axis.title.x = element_blank(),
+                        axis.title.y = element_blank(),
+                        plot.title = element_text(size=22),
+                        legend.background = element_rect(fill="#e6e8ed")))
+p <- ggplot() + 
+  geom_polygon(data = df, aes(x = long, y = lat, group = group), colour = "black", size = 0.25, fill = "white") + 
+  geom_path(data = path, aes(X1, X2, group = person), alpha = 0.3,) +
+  geom_point(data = totals, aes(x = DepartureLongitude, y = DepartureLatitude, size = sqrt(count), colour = isStation)) + 
+  coord_equal() + 
+  theme_classic() +
+  theme(legend.position = c(0.85, 0.15)) +
+  theme_opts +
+  scale_colour_brewer(name = "Facility Type", type = "qual", palette = 7) +
+  scale_size_continuous(guide = F)
+
+ggsave(p, file = "map.png", width = 10, height = 6, type = "cairo-png")
+  
+
+# p <- DHIMS %>% group_by(District, date) %>%
+#           filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+#           summarise(births = sum(births, na.rm = T)) %>% 
+#           ggplot(.,aes(x = date, y = births, colour = District, fill = District)) + 
+#           geom_point() + geom_vline(aes(xintercept = as.numeric(date[date == as.Date("2013-08-01")])), linetype = 2) +
+#           stat_smooth(method = "lm", formula = y ~ bs(x, degree = 1, knots = as.Date("2013-08-01"))) + 
+#           theme_bw(base_size = 14, base_family = "Helvetica")
+
+
+total <- DHIMS %>% group_by(SERC, date) %>%
+  filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+  summarise(total_births = sum(births, na.rm = T))
+
+p1 <- DHIMS %>% group_by(SERC, level, date) %>%
+  filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+  summarise(births = sum(births, na.rm = T)) %>%
+  left_join(.,total) %>%
+  mutate(prop = births/total_births)
+png(filename = "./serc_sitevisit_impact_births_prop-2015-06-22.png", width = 6000, height = 3000, res = 300)
+  ggplot(p1, aes(x = date, y = prop, colour = SERC, fill = SERC)) + 
+  geom_point() + geom_vline(aes(xintercept = as.numeric(date[date == as.Date("2013-08-01")])), linetype = 2) +
+  stat_smooth(method = "lm", formula = y ~ bs(x,degree = 1, knots = as.Date("2013-08-01"))) +
+  theme_bw(base_size = 14, base_family = "Helvetica") +
+  facet_wrap(~level) +
+  labs(x = "Date", y = "Proportion of total facility deliveries") +
+  scale_y_continuous(labels = percent_format()) +
+  scale_color_discrete(name = "Group") + scale_fill_discrete(name = "Group") +
+  annotate("text", x = as.Date("2014-05-01"), y = 0.05, label = "intervention") +
+  annotate("text", x = as.Date("2014-05-01"), y = 0.025, label = "period") +
+  theme(legend.position = "bottom")
+dev.off()
+
+p3 <- df2 %>% mutate(e = exp(lsmean)*100000, phigh = exp(asymp.UCL)*100000,plow = exp(asymp.LCL)*100000, per = factor(ifelse(period == 1, "post", "pre"), c("pre", "post"))) %>% ggplot(., aes(x = per, y = e, colour = SERC)) + geom_point(size = 15, shape = 18) + geom_errorbar(aes(ymin = plow, ymax = phigh)) + facet_wrap(~SERC) + theme_bw() + scale_colour_discrete(guide = F) + labs(x = "Period", y = "MMR (deaths per 100,000 births)")
+
+ggsave(filename = "serc_sitevisit_mmr-2015-06-23.png", plot = p3, width = 6, height = 6.5, type = "cairo-png")
+
+
+
+QIC.pois.geese <- function(model.R, model.indep) {
+  library(MASS)
+  # Fitted and observed values for quasi likelihood
+  mu.R <- model.R$fitted.values
+  # alt: X <- model.matrix(model.R)
+      #  names(model.R$coefficients) <- NULL
+      #  beta.R <- model.R$coefficients
+      #  mu.R <- exp(X %*% beta.R)
+  y <- model.R$y
+
+  # Quasi Likelihood for Poisson
+  quasi.R <- sum((y*log(mu.R)) - mu.R) # poisson()$dev.resids - scale and weights = 1
+ 
+  # Trace Term (penalty for model complexity)
+  AIinverse <- ginv(model.Indep$vbeta.naiv) # Omega-hat(I) via Moore-Penrose generalized inverse of a matrix in MASS package
+  # Alt: AIinverse <- solve(model.Indep$vbeta.naiv) # solve via identity
+  Vr <- model.R$vbeta
+  trace.R <- sum(diag(AIinverse %*% Vr))
+  px <- length(mu.R) # number non-redunant columns in design matrix
+
+  # QIC
+  QIC <- (-2)*quasi.R + 2*trace.R
+  QICu <- (-2)*quasi.R + 2*px    # Approximation assuming model structured correctly 
+  output <- c(QIC, QICu, quasi.R, trace.R, px)
+  names(output) <- c('QIC', 'QICu', 'Quasi Lik', 'Trace', 'px')
+  output}
+
+```
+
+# Discussion {-}
+
+# Material and Methods {-}
+You may title this section "Methods" or "Models". "Models" is not a valid title 
+for PLoS ONE authors. However, PLoS ONE authors may use "Analysis" 
+
+# Acknowledgments {-}
+Do NOT remove this, even if you are not including acknowledgments
+
+# References {-}
+A reference list should be automatically created here. However it won't. Pandoc 
+will place the list of references at the end of the document instead. There are 
+no convenient solution for now to force Pandoc to do otherwise. The easiest way 
+to get around this problem is to edit the LaTeX file created by Pandoc before 
+compiling it again using the traditional LaTeX commands.
+
+# Figure Legends {-}
+
+# Tables {-}
+

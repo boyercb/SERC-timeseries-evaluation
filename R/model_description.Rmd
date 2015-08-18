@@ -1,0 +1,271 @@
+---
+title: "SERC Impact Evaluation"
+author:
+  - name: Sneha Patel
+    affiliation: '1'
+    email: sp2827@cumc.columbia.edu
+  - name: Christopher B. Boyer
+    affiliation: '1'
+  - name: J. Koku Awoonor-Williams
+    affiliation: '2'
+  - name: Rofina Asuru
+    affiliation: '2'
+  - name: James F. Phillips
+    affiliation: '1'
+affiliation:
+  - id: '1'
+    department: Department of Epidemiology
+    institution: Columbia University
+    city: New York
+    state: NY
+    country: USA
+  - id: '2'
+    department: Regional Health Administration
+    institution: Ghana Health Service
+    city: Bolgatanga
+    state: Upper East
+    country: Ghana
+output: chris::plos_article2
+setspace: doublespacing
+csl: plos.csl
+geometry: margin=1in
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{dcolumn} 
+  - \usepackage{rotating}
+---
+
+# Model Descriptions
+We estimate the impact of SERC services using generalized estimating equations to model change in facility reports of births and rates of maternal deaths and cesarian sections in the period before and after the implementation of SERC. Data from SERC facilities are compared to that of a control group comprised of facilities in neighboring districts in the Upper East and Upper West Regions of Ghana over the period of January 2009 to December 2014. Controls were selected from among facilities with similar socio-demographic and health indicators statistics in the period prior to the implementation of SERC. Regression models take the form:
+
+
+\begin{align}
+\mu_{ij} = & \beta_{0} + \beta_{1} x_{ij} + \beta_{2} z_{ij} + \beta_{3} t_{ij} + \beta_{4} (t_{ij} - T_{0})u_{ij} + \beta_{5} x_{ij} z_{ij} + \beta_{6} x_{ij} t_{ij} + \\
+           & \beta_{7} z_{ij} t_{ij} + \beta_{8} x_{it} (t_{ij} - T_{0})u_{ij} + \beta_{9} z_{it} (t_{ij} - T_{0})u_{ij} + \nonumber \\
+           & \beta_{10} x_{it} z_{ij} t_{ij} + \beta_{11} x_{ij} z_{ij} (t_{ij} - T_{0})u_{ij} + \epsilon_{ij} \nonumber \\
+P(\mu | x,z,t) \sim & \textrm{N} [ \mu, \sigma^2 ] \nonumber
+\end{align}
+
+and
+
+\begin{align}
+\textrm{log} [ \mu_{ij} ] &= \beta_{0} + \beta_{1} x_{ij} + \beta_{2} w_{ij} + \beta_{3} x_{ij} w_{ij} + \epsilon_{ij} \\
+P(\mu | x,w) \sim & \textrm{Poisson} [ \mu, \sigma^2 ] \nonumber
+\end{align}
+
+where, 
+
+\begin{description}
+\item[ $\mu_{ij}$ ] The outcome of interest for facility $i$ at time $j$. Note that in the case of c-section and death rates the outcome counts are divided by the total number of births at facility $i$ at time $j$. 
+\item[ $x_{ij}$ ] Discrete dummy variable indicator of whether facility $i$ belongs to the treatment or control group.
+\item[ $z_{ij}$ ] Discrete dummy variable indicator of whether facility $i$ is a hospital or lower-level facility.
+\item[ $t_{ij}$ ] Integer count of months since start of observation period (Jan 1 2009).
+\item[ $T_{0}$ ] Time of start of SERC exposure (Aug 1 2013).
+\item[ $u_{ij}$ ] Step function which is equal to $0$ if $t_{ij} < T_{0}$ and is equal to $1$ if $t_{ij} \geq T_{0}$.
+\item[ $w_{ij}$ ] Discrete variable indicator of whether observation $j$ is pre- or post-intervention.
+\item[ $\epsilon_{ij}$ ] Error term for facility $i$ at time $j$. 
+\end{description}
+
+
+Model (1) is used to estimate the number of deliveries recorded by all 359 facilities over 70 months of observation. Model (2) is used to estimate the rates of cesarean deliveries and maternal deaths among the 17 district hospital facilities that provide these services over 70 months of observation. Repeated observations within a facility are adjusted for by assuming an exchangeable correlation structure. For inference, we report robust standard errors obtained via the sandwich operator.
+
+# Results
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# additional R packages
+library(dplyr)
+library(tidyr)
+library(magrittr)
+library(ggplot2)
+library(splines)
+library(captioner)
+library(lubridate)
+library(scales)
+library(grid)
+library(stargazer)
+library(gee)
+library(multcomp)
+#library(knitr)
+
+# set working directory
+setwd("~/Dropbox/ARCHeS/CU Practicum Ghana/2014/Christopher Boyer/SERC Evaluation/")
+
+# load data set
+load(file = "./DHIMS.rda")
+
+# read infants data set
+infants <- read.csv("./data/infants.csv")
+
+# initialize captioners
+figure_nums <- captioner(prefix = "Figure")
+table_nums <- captioner(prefix = "Table")
+
+# merge data frames
+infants <- infants %>% mutate(date = as.Date(paste("01", date), format ="%d %B %Y")) %>%
+                       filter(facility != "Regional Hospital, Bolgatanga")
+DHIMS <- DHIMS %>% left_join(., infants)
+DHIMS <- DHIMS %>% mutate(facility = factor(facility))
+```
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, dpi=300, fig.width=7, fig.height=5}
+# figure 1: plot of total number of deliveries
+
+# calculate mean number of births by treatment group
+mean_births <- DHIMS %>% group_by(SERC, date) %>%
+                         filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+                         summarise(total_births = sum(births, na.rm = T)) %>% group_by(SERC) %>% 
+                         summarise(mean_births = mean(total_births, na.rm = T))
+
+# prepare plot object (p)
+p <- DHIMS %>% group_by(SERC, date) %>%
+               filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+               summarise(births = sum(births, na.rm = T)) %>% 
+               left_join(., mean_births) %>%
+               mutate(births2 = (births - mean_births)/mean_births)
+
+# render plot
+#png(filename = "./serc_sitevisit_impact_births-2015-06-22.png", width = 4000, height = 2500, res = 300)
+ggplot(p, aes(x = date, y = births2, colour = SERC, fill = SERC)) + 
+  geom_point() + geom_vline(aes(xintercept = as.numeric(date[date == as.Date("2013-08-01")])), linetype = 2) +
+  stat_smooth(method = "lm", formula = y ~ bs(x, degree = 1, knots = as.Date("2013-08-01"))) + 
+  annotate("text", x = as.Date("2014-05-01"), y = -0.35, label = "intervention period", size = 3, family = "Palatino") +
+  theme_classic(base_size = 11, base_family = "Palatino") +
+  labs(x = "Date", y = "Total number of facility deliveries (unit scaled)") +
+  scale_color_discrete(name = "Group") + scale_fill_discrete(name = "Group") 
+#dev.off()
+```
+`r figure_nums(name = "Figure 1", caption = "Plot of total monthly deliveries by intervention group for 359 facilities, UER and UWR, Ghana 2009 to 2015")`
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, dpi=300, fig.width=10, fig.height=8, fig.align='center', out.height='5.2in', out.width='6.5in'}
+
+# figure 2: plot of births by level with single knot
+
+# calculate total number of births
+total <- DHIMS %>% group_by(SERC, date) %>%
+  filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+  summarise(total_births = sum(births, na.rm = T))
+
+# prepare plot object (p1)
+p1 <- DHIMS %>% group_by(SERC, level, date) %>%
+  filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-10-01")) %>%
+  summarise(births = sum(births, na.rm = T)) %>%
+  left_join(.,total) %>%
+  mutate(prop = births/total_births)
+
+# render plot
+ggplot(p1, aes(x = date, y = prop, colour = SERC, fill = SERC)) + 
+  geom_point() + geom_vline(aes(xintercept = as.numeric(date[date == as.Date("2013-08-01")])), linetype = 2) +
+  stat_smooth(method = "lm", formula = y ~ bs(x,degree = 1, knots = as.Date("2013-08-01"))) +
+  theme_bw(base_size = 13, base_family = "Palatino") +
+  facet_wrap(~level, ncol = 3) +
+  labs(x = "Date", y = "Proportion of total facility deliveries") +
+  scale_y_continuous(labels = percent_format()) +
+  scale_color_discrete(name = "Group") + scale_fill_discrete(name = "Group") +
+  annotate("text", x = as.Date("2014-05-01"), y = 0.05, label = "intervention", family = "Palatino", size = 2.9) +
+  annotate("text", x = as.Date("2014-05-01"), y = 0.035, label = "period", family = "Palatino", size = 2.9) +
+  theme(legend.position = "bottom", panel.margin = unit(1.5, "lines"))
+
+# DHIMS %>% filter(level == "District Hospital" & date >= as.Date("2009-01-01")) %>% group_by(SERC, level, date) %>%
+#   summarise(death_rate = sum(deaths, na.rm = T)/sum(births, na.rm = T)*100000) %>%
+#   ggplot(., aes(x = date, y = death_rate, colour = SERC)) + 
+#   geom_point() + stat_smooth(method = "glm", formula = y ~ bs(x,degree = 1, df = 2), family = "poisson") + facet_wrap(~level)
+# 
+# DHIMS %>% filter(level == "District Hospital" & date >= as.Date("2009-01-01")) %>% group_by(SERC, level, date) %>%
+#   summarise(imr = sum(infant_deaths, na.rm = T)/sum(births, na.rm = T)*1000) %>%
+#   mutate(period = ifelse(date >= as.Date("2013-08-01"), 1, 0)) %>%
+#   mutate(period = factor(period, , c('pre', 'post'))) %>% filter(imr != 0) %>%
+#   ggplot(., aes(x = period, y = imr, colour = SERC)) + 
+#   geom_violin() + stat_smooth(method = "lm", formula = y ~ bs(x, degree = 1, knots = as.Date("2013-08-01"))) + 
+#   facet_wrap(~level)
+# 
+# DHIMS %>% filter(level !="CHPS"  & date >= as.Date("2009-01-01") & Region != "Upper West") %>% group_by(SERC, level, date) %>%
+#   summarise(csrate = sum(csections, na.rm = T)/sum(births, na.rm = T)*100) %>%
+#   ggplot(., aes(x = date, y = csrate, colour = SERC)) + 
+#   geom_point()  + stat_smooth(method = "glm", formula = y ~ bs(x,degree = 1, df = 2), family = "poisson") + 
+#   facet_wrap(~level)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE,results='hide'}
+DHIMS <- DHIMS %>% mutate(period = ifelse(date >= as.Date("2013-08-01"), 1, 0))
+DHIMS <- DHIMS %>% mutate(period = factor(period, , c('pre', 'post')),
+                          level = factor(level, c("CHPS", "Health Centre/Clinic", "District Hospital")))
+
+DHIMS_cut <- DHIMS %>% filter(date >= as.Date("2009-01-01") & date <= as.Date("2014-11-01")) 
+
+hospitals <- DHIMS_cut %>% filter(level =="District Hospital")
+
+fit_mmr <- gee(deaths ~ SERC * period + offset(log(births)),
+                             data = hospitals,
+                             family = poisson(link = 'log'),
+                             id = facility, 
+                             corstr = "exchangeable")
+fit_mmr <- geeglm(deaths ~ SERC * period + offset(log(births)),
+                             data = hospitals,
+                             family = poisson(link = 'log'),
+                             id = facility, 
+                             corstr = "exchangeable")
+fit_nmr <- hospitals %>% gee(infant_deaths ~ SERC * period + offset(log(births)),
+                             data = .,
+                             family = poisson(link = 'log'),
+                             id = facility, 
+                             corstr = "exchangeable")
+coef.vector3 <- exp(fit_mmr$coef)
+
+fit_cs <- hospitals %>% gee(csections ~ SERC * period + offset(log(births)),
+                             data = .,
+                             family = poisson(link = 'log'),
+                             id = facility, 
+                             corstr = "exchangeable")
+
+coef.vector2 <- exp(fit_cs$coef)
+
+fit_births1 <- DHIMS_cut %>% gee(births ~ level * SERC * period, 
+                               data = .,
+                               id = facility, 
+                               family = poisson(link = 'log'),
+                               corstr = "exchangeable")
+
+fit_births2 <- DHIMS_cut %>% gee(births ~ level * SERC * time + level * SERC * intervention, 
+                               data = .,
+                               id = facility, 
+                               corstr = "exchangeable")
+
+coef.vector1 <- exp(fit_births1$coef)
+```
+
+```{r, echo=FALSE, results='asis', warning=FALSE, message=FALSE}
+stargazer(fit_births2, fit_cs, fit_mmr, fit_nmr, 
+          dep.var.labels = c("births", "CSR\\textsuperscript{a}", "MMR\\textsuperscript{b}", "IMR\\textsuperscript{c}"),
+          column.sep.width = "0pt",
+          covariate.labels = c("\\textit{Intercept}", "Clinic", "Hospital", "SERC", "time (\\textit{cont})",
+                               "intervention time (\\textit{cont})", "Clinic $\\cdot$ SERC", 
+                               "Hospital $\\cdot$ SERC", "Clinic $\\cdot$ time", "Hospital $\\cdot$ time",
+                               "SERC $\\cdot$ time", "Clinic $\\cdot$ intervention", "Hospital $\\cdot$ intervention",
+                               "SERC $\\cdot$ intervention", "Clinic $\\cdot$ SERC $\\cdot$ time",
+                               "Hospital $\\cdot$ SERC $\\cdot$ time", "Clinic $\\cdot$ SERC $\\cdot$ intervention",
+                               "Hospital $\\cdot$ SERC $\\cdot$ intervention", "period (\\textit{cat})", 
+                               "SERC $\\cdot$ period"),
+          notes = c("\\textsuperscript{a} Cesarean section rate. Defined as number of cesarean sections divided by the number of births."," \\textsuperscript{b} Maternal mortality ratio (facility-based). Defined as the number of maternal deaths per 100,000 live facility births", "\\textsuperscript{c} Infant mortality ratio (facility-based). Defined as the number of infant deaths (0q1) per 1,000 live facility births."),
+          notes.align = 'l',
+          float = T, float.env = "sidewaystable",
+          out.header = F,
+          intercept.top = T,
+          intercept.bottom = F,
+          digits = 2,
+          single.row = T,
+          header=FALSE,
+          ci = T,
+          title = "Summary of GEE models for births and cesarean section, maternal mortality, and infant mortality rates in SERC vs. control districts in Ghana, 2009 - 2015."
+)
+
+contr <- rbind(
+  "SERC post vs Control pre" =  c(1, 0, 0, -1),
+  "SERC pre vs Control pre"  =  c(0, 0, 1, -1),
+  "Control post vs Control pre" = c(0, 1, 0, -1),
+  "SERC post vs SERC pre"    =  c(1, 0, -1, 0),
+  "post vs. pre" = c(1, 1, -1, -1)
+    )
+summary(glht(fit_mmr, contr))
+```

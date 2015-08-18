@@ -1,0 +1,324 @@
+---
+title: "SERC Analysis"
+author: "Christopher Boyer"
+date: "January 21, 2015"
+output: html_document
+---
+```{r, echo=FALSE,results='hide', message=FALSE}
+# library files
+library(ggplot2)
+library(sp)
+library(geosphere)
+library(dplyr)
+library(tidyr)
+library(scales)
+setwd("~/Dropbox/ARCHeS/CU Practicum Ghana/2014/Christopher Boyer/SERC Evaluation/")
+```
+## Background
+Data for the evaluation of SERC come from routine monitoring and surveillance of emergency referral activity in three implementation districts (Bongo, Builsa North, and Builsa South) in rural Northern Ghana. Primary data are captured via an emergency referral form completed by health staff upon arrival at the receiving health facility. These forms are collected bi-weekly and entered into a shared database. Additional data concerning program expenditures and service utilization are aggregated by facility and collected on a monthly basis.
+
+## Raw Data
+Emergency referral records collected during the first year of operation of the SERC initiative were imported from the SERC database for this analysis.
+
+```{r}
+referrals <- read.table("./data/VTRF_Export-2015-06-22.txt", sep = ",", header = T)
+```
+
+```{r, echo=FALSE}
+# fixing the date-time conversion issue with MS Access
+referrals$ReferralDate <- as.POSIXct(x = referrals$ReferralDate, format=c("%m/%d/%Y %k:%M:%S"))
+referrals$RequestTime <- as.POSIXct(x = referrals$RequestTime, format=c("%m/%d/%Y %k:%M:%S"))
+referrals$DepartureTime <- as.POSIXct(x = referrals$DepartureTime, format=c("%m/%d/%Y %k:%M:%S"))
+referrals$PickUpTime <- as.POSIXct(x = referrals$PickUpTime, format=c("%m/%d/%Y %k:%M:%S"))
+referrals$ArrivalTime <- as.POSIXct(x = referrals$ArrivalTime, format=c("%m/%d/%Y %k:%M:%S"))
+referrals$month <- month(referrals$ReferralDate)
+referrals$year <- year(referrals$ReferralDate)
+referrals$monthly_date <- as.Date(paste(referrals$year, referrals$month, "01", sep = "-"))
+# # changing logical integer variables to R logical classes
+# referrals$DepartureisStation <- referrals$DepartureisStation != 0
+# referrals$PickUpisStation <- referrals$PickUpisStation != 0
+# referrals$ArrivalisStation <- referrals$ArrivalisStation != 0
+# referrals$MultiStage <- referrals$MultiStage != 0
+# referrals$Breakdown <- referrals$Breakdown != 0
+# referrals$IsPregnant <- referrals$IsPregnant != 0
+# referrals$Accompanied <- referrals$Accompanied != 0
+# referrals$Alerted <- referrals$Alerted != 0
+# referrals$MCEmergencyPhone <- referrals$MCEmergencyPhone != 0
+# referrals$MCPersonalPhone <- referrals$MCPersonalPhone != 0
+# referrals$MCInPerson <- referrals$MCInPerson != 0
+# referrals$MCEmergencyRadio <- referrals$MCEmergencyRadio != 0
+# referrals$MCOther <- referrals$MCOther != 0
+# referrals$NormalLabor <- referrals$NormalLabor != 0
+# referrals$ComplicatedLabor <- referrals$ComplicatedLabor != 0
+# referrals$Abortion <- referrals$Abortion != 0
+# referrals$Malaria <- referrals$Malaria != 0
+# referrals$Anemia <- referrals$Anemia != 0
+# referrals$ARI <- referrals$ARI != 0
+# referrals$RTA <- referrals$RTA != 0
+# referrals$SnakeBite <- referrals$SnakeBite != 0
+# referrals$Poisoning <- referrals$Poisoning != 0
+# referrals$Meningitis <- referrals$Meningitis != 0
+# referrals$Hypertension <- referrals$Hypertension != 0
+# referrals$Injury <- referrals$Injury != 0
+# referrals$Diarrhea <- referrals$Diarrhea != 0
+# referrals$Septicemia <- referrals$Septicemia != 0
+# referrals$Dyspnea <- referrals$Dyspnea != 0
+# referrals$OtherReason <- referrals$OtherReason != 0
+# referrals$Outcome1 <- referrals$Outcome1 != 0
+# referrals$Outcome2 <- referrals$Outcome2 != 0
+# referrals$Outcome3 <- referrals$Outcome3 != 0
+# referrals$Outcome4 <- referrals$Outcome4 != 0
+# referrals$Outcome5 <- referrals$Outcome5 != 0
+# referrals$Outcome6 <- referrals$Outcome6 != 0
+# referrals$Outcome7 <- referrals$Outcome7 != 0
+# referrals$WasEmergency <- referrals$WasEmergency != 0
+
+# merging factor levels list into master for Arrival, Departure, PickUp locations
+# FacilityLevels <- factor(c(as.character(referrals$Departure),
+#                                 as.character(referrals$PickUp), 
+#                                 as.character(referrals$Arrival)
+#                                 ))
+# 
+# referrals$Departure <- FacilityLevels[1:863]
+# referrals$PickUp <- FacilityLevels[864:1726]
+# referrals$Arrival <- FacilityLevels[1727:2589]
+
+# changing integer to R factor class
+# referrals$PatientLoc <- factor(referrals$PatientLoc, labels = c("Station", "Community", "Other Facility"))
+# 
+# # relevel district factor variables
+# referrals$DepartureDistrict[ referrals$DepartureDistrict == "" ] <- NA
+# referrals$DepartureDistrict <- droplevels(referrals$DepartureDistrict)
+```
+
+Below are the `r dim(referrals)[2]`  variables captured by the SERC monitoring system for each referral record.
+
+```{r, echo=FALSE}
+colnames(referrals)
+```
+
+## Additional Variables
+
+### 1. Delay
+The delay corresponds to the time elapsed from the initial request for the ambulance until the departure of the vehicle from the station. 
+
+```{r}
+referrals$Delay <- difftime(referrals$DepartureTime,referrals$RequestTime, units = "min")
+```
+```{r, echo=FALSE}
+referrals$Delay <- as.integer(referrals$Delay)
+```
+### 2. Trip Duration
+The trip duration is the time elapsed from the departure of the ambulance until arrival at the receiving health facility.
+
+```{r}
+referrals$Duration <- difftime(referrals$ArrivalTime, referrals$DepartureTime,units = "min")
+```
+```{r, echo=FALSE}
+referrals$Duration <- as.integer(referrals$Duration)
+```
+
+### 3. Distance Traveled
+The distance traversed by the ambulance from vehicle station to patient pick up point to receiving health facility, or, alternatively, from vehicle station straight to receiving health facility can be estimated using facility and community geocoordinates recorded in the SERC database. Great circle distances between departure, pickup, and arrival points are estimated using Vincenty's formula for an oblate spheroid with WGS 1984 parameters. 
+
+```{r}
+referrals$ReferralDistance <- ifelse(referrals$Facility == "" & referrals$Community == "", 
+        # if no pick up location calculate distance from departure to arrival
+        distVincentyEllipsoid(cbind(referrals$ArrivalLongitude,referrals$ArrivalLatitude), 
+                              cbind(referrals$DepartureLongitude,referrals$DepartureLatitude)),
+        # otherwise calculate distance from departure to pick up point to arrival
+        distVincentyEllipsoid(cbind(referrals$PickUpLongitude,referrals$PickUpLatitude), 
+                              cbind(referrals$DepartureLongitude,referrals$DepartureLatitude)) + 
+        distVincentyEllipsoid(cbind(referrals$ArrivalLongitude,referrals$ArrivalLatitude), 
+                              cbind(referrals$PickUpLongitude,referrals$PickUpLatitude)))
+# unit conversion m -> km
+referrals$ReferralDistance <- referrals$ReferralDistance/1000
+```
+
+Emergency call outs within the same community (n = `r sum((referrals$Departure == referrals$Arrival) & (referrals$ReferralDistance == 0))`) are assigned a randomly sampled value between 0 and 1 to represent the short distances traveled in these situations.
+
+```{r}
+# assign 0.5 km to emergency call outs within same community
+# ind.SameCom <- which((referrals$Departure == referrals$Arrival) & (referrals$ReferralDistance == 0))
+# referrals$ReferralDistance[ind.SameCom] <- sample(seq(0,1,0.01),1,replace = F)
+```
+
+## Drop Variables
+Several variables either have no records or are irrelevant to this analysis. These variables are dropped from the data set.
+
+```{r}
+# drop variables
+referrals$DepartureTime <- NULL
+referrals$DepartureLon <- NULL
+referrals$DepartureLat <- NULL
+referrals$PickUpTime <- NULL
+referrals$PickUpLon <- NULL
+referrals$PickUpLat <- NULL
+referrals$ArrivalTime <- NULL
+referrals$ArrivalLon <- NULL
+referrals$ArrivalLat <- NULL
+referrals$MultiStage <- NULL
+referrals$OtherReasonTXT <- NULL
+referrals$OutcomeTXT <- NULL
+referrals$GHSReferralNo <- NULL
+
+# strip time information from request time variable and apply same date for analysis purposes
+referrals$RequestTime <- strftime(referrals$RequestTime, format=c("%H:%M:%S"))
+referrals$RequestTime <- as.POSIXct(referrals$RequestTime, format=c("%H:%M:%S"))
+```
+
+## Univariate Analysis
+
+### 1. Date-time Variables 
+Between `r format(min(referrals$ReferralDate, na.rm=T), format="%B %Y")` and `r format(max(referrals$ReferralDate, na.rm=T), format="%B %Y")` `r dim(referrals)[1]` unique referral records were collected. Weekly tallies show a surge in utilization in the first weeks of implementation followed by a decline and re-stabilization at between 7 and 15 referrals per week. Table 1 below shows the referral counts aggregated by month.
+
+```{r}
+# bin size (equivalent to 7 days)
+bin <- (604800/7)*30
+
+# plot weekly tallies
+ggplot(referrals, aes(x=ReferralDate, fill = District)) + geom_histogram(colour=c("#FFFFFF"), binwidth=bin)
+ggplot(referrals, aes(x=ReferralDate)) + geom_histogram(colour=c("#FFFFFF"), binwidth=bin)
+
+# plot time of day histogram for requests
+ggplot(referrals, aes(RequestTime)) + 
+  geom_histogram(binwidth = 3600, colour=c("#FFFFFF")) +
+  scale_x_datetime(breaks = "2 hours", labels=date_format("%H:%M"))
+
+# monthly tallies
+referrals$MonthDate <- format(referrals$ReferralDate, format = c("%Y-%m"))
+by_month <- group_by(referrals, MonthDate)
+by_month <- summarize(by_month, count=n(), percent=100*n()/dim(by_month)[1])
+```
+```{r, echo=FALSE}
+by_month$MonthDate[1:12] <- format(as.Date(paste(by_month$MonthDate[1:12], "-01", sep="")), format=c("%b %Y")) 
+```
+
+| Month              | Count (%)                                 | 
+| ------------------ | ----------------------------------------- |  
+| `r by_month[1,1]`  | `r by_month[1,2]` (`r signif(by_month[1,3], 2)` %)   |
+| `r by_month[2,1]`  | `r by_month[2,2]` (`r signif(by_month[2,3], 2)` %)   |
+| `r by_month[3,1]`  | `r by_month[3,2]` (`r signif(by_month[3,3], 2)` %)   |
+| `r by_month[4,1]`  | `r by_month[4,2]` (`r signif(by_month[4,3], 2)` %)   |
+| `r by_month[5,1]`  | `r by_month[5,2]` (`r signif(by_month[5,3], 2)` %)   |
+| `r by_month[6,1]`  | `r by_month[6,2]` (`r signif(by_month[6,3], 2)` %)   |
+| `r by_month[7,1]`  | `r by_month[7,2]` (`r signif(by_month[7,3], 2)` %)   |
+| `r by_month[8,1]`  | `r by_month[8,2]` (`r signif(by_month[8,3], 2)` %)   |
+| `r by_month[9,1]`  | `r by_month[9,2]` (`r signif(by_month[9,3], 2)` %)   |
+| `r by_month[10,1]` | `r by_month[10,2]` (`r signif(by_month[10,3], 2)` %) |
+| `r by_month[11,1]` | `r by_month[11,2]` (`r signif(by_month[11,3], 2)` %) |
+| `r by_month[12,1]` | `r by_month[12,2]` (`r signif(by_month[12,3], 2)` %) |
+
+### 2. Continuous Variables
+
+```{r}
+#contVars <- referrals %>% select(ID, Duration, Delay, ReferralDistance, Age, CatchementPop) %>% gather(key, value, -ID)
+
+# plot delay and duration histograms
+#ggplot(data=contVars, aes(x=value)) + geom_histogram() + facet_wrap( ~key, scales="free_x")
+```
+
+### 3. Categorical Variables
+
+```{r}
+catVars <- referrals %>% select(PatientLoc, Breakdown, Accompanied, Alerted, Sex, IsPregnant)  %>% gather(key, value)
+
+referrals %>% mutate(duration = )
+ggplot(data=catVars, aes(x=value)) + geom_histogram() + facet_wrap( ~key, scales="free_x")
+
+Communication <- referrals %>% select(MCEmergencyPhone, MCPersonalPhone, MCInPerson, MCEmergencyRadio, MCOther) %>% gather(key, value) %>% filter(value==TRUE)
+
+qplot(key, data=Communication, geom="bar")
+
+Sex <- referrals %>% select(monthly_date, Sex) %>% 
+                     group_by(monthly_date, Sex) %>% summarise(tally = n()) %>% 
+                     filter(Sex == "M" | Sex == "F") %>% filter(monthly_date > as.Date("2013-07-01"))
+Sex %>% ggplot(., aes(x = monthly_date, y = tally, fill = Sex)) + 
+             geom_bar(position = "fill", stat = "identity") +
+             labs(x = "Date", y = "Count") +
+             theme_classic(base_family = "Helvetica", base_size = 14) +
+             scale_x_date(labels=date_format("%b-%Y"), breaks = "1 month") +    
+             theme(axis.text.x = element_text(angle=90,hjust = 1,vjust = 1)) + 
+             scale_y_continuous(labels = percent_format())
+Reason <- referrals %>% select(monthly_date, NormalLabor, ComplicatedLabor, Abortion, Malaria, Anemia, ARI,
+                               RTA, SnakeBite, Poisoning, Meningitis, Hypertension, Injury, Diarrhea,
+                               Septicemia, Dyspnea, OtherReason) %>% gather(key, value, -monthly_date) %>% 
+                        group_by(monthly_date, key) %>% summarise(tally = sum(value)) %>% 
+                        mutate(Key = factor(key, labels = c("Spontaneous Labor", "Complicated Labor", "Abortion",
+                                                            "Malaria", "Anemia", "ARI", "RTA", "SnakeBite", "Poisoning",
+                                                            "Meningitis", "Hypertension", "Injury", "Diarrhea",
+                                                            "Septicemia", "Dyspnea", "Other")))
+library(splines)
+png(filename = "./serc_sitevisit_reason_date-2015-06-22.png", width = 4000, height = 2500, res = 300)
+Reason %>% filter(monthly_date > as.Date("2013-07-01")) %>%
+             ggplot(., aes(x = monthly_date, y = tally, fill = Key)) + 
+             geom_bar(stat = "identity") +
+             labs(x = "Date", y = "Count") +
+             theme_classic(base_family = "Helvetica", base_size = 14) +
+             scale_x_date(labels=date_format("%b-%Y"), breaks = "1 month") +    
+             theme(axis.text.x = element_text(angle=45,hjust = 1, vjust = 1))
+dev.off()
+png(filename = "./serc_sitevisit_reason-2015-06-22.png",res = 300, width = 2000, height = 3000)
+Reason %>% group_by(Key) %>% summarise(tally = sum(tally, na.rm =T)) %>%
+           mutate(Percent = tally/sum(tally, na.rm = T)) %>%
+           ggplot(., aes(x = Key, y = Percent, fill = Key)) + 
+           geom_bar(stat = "identity") +
+           theme_classic(base_family = "Helvetica", base_size = 14) +
+           scale_y_continuous(labels = percent_format()) + scale_fill_discrete(guide = F) + coord_flip()
+dev.off()
+qplot(key, data=Reason, geom="bar")
+
+Outcome <- referrals %>% select(monthly_date, Outcome1, Outcome2, Outcome3, Outcome4, Outcome5, Outcome6, Outcome7) %>% 
+                         gather(key, value, -monthly_date) %>% 
+                         group_by(monthly_date, key) %>% summarise(tally = sum(value))
+Outcome %>% filter(monthly_date > as.Date("2013-07-01")) %>%
+           ggplot(., aes(x = monthly_date, y = tally, fill = key)) + 
+           geom_bar(stat = "identity") +
+           theme_classic(base_family = "Helvetica")
+
+Outcome %>% filter(monthly_date > as.Date("2013-07-01")) %>%
+           ggplot(., aes(x = monthly_date, y = tally, fill = key)) + 
+           geom_bar(position = "fill", stat = "identity") +
+           scale_y_continuous(labels = percent_format())
+qplot(key, data=Outcome, geom="bar")
+
+```
+
+## Bivariate
+
+### 1. Patient Demographics
+
+```{r}
+Demographics <- referrals %>% select(GlobalRecordId, Sex, Age) %>% 
+  mutate(AgeCat = cut(Age,breaks=c(0,5,10,15,20,25,30,35,40,45,50,100),right = F)) %>% 
+  select(Sex, AgeCat) %>% group_by(AgeCat, Sex) %>% 
+  summarise(value=n()) %>% 
+  mutate(likert = ifelse(Sex=="M", value, -value))
+
+Demographics <- na.omit(Demographics)
+
+ggplot(data=Demographics, aes(y = likert, x = AgeCat, fill=Sex)) + 
+  geom_bar(data= filter(Demographics, Sex == "F"), stat = "identity", position="stack") + 
+  geom_bar(data=filter(Demographics, Sex == "M"), stat = "identity", position="stack") + 
+  theme_bw() +
+  coord_flip() 
+
+
+
+```
+
+### 2. 
+
+```{r}
+# qplot(Duration, ReferralDistance, data=referrals, colour=DepartureLevel)
+# 
+# ggplot(referrals, aes(x=PatientLoc, y=Duration)) + geom_boxplot()
+# ggplot(referrals, aes(x=PatientLoc, y=ReferralDistance)) + geom_boxplot()
+# 
+# 
+# lm(ReferralDistance ~ PatientLoc, referrals)
+# lm(Duration ~ PatientLoc, filter(referrals, DepartureisStation==T))
+# 
+# facility <- referrals %>% select(Departure, PickUp, Arrival, CatchementPop, ReferralDistance) %>%
+#     group_by(Departure)
+```
